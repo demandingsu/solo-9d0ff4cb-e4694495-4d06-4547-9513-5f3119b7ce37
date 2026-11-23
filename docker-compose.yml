@@ -1,0 +1,19 @@
+services:
+  web:
+    build: .
+    image: label-printing:latest
+    container_name: label-printing-web
+    ports:
+      - "8000:8000"
+    environment:
+      LABEL_DB_PATH: /data/labels.db
+      LABEL_BUSY_TIMEOUT_MS: "15000"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

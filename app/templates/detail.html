@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}展品 {{ data.exhibit_no }} · 可印语种{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>展品 {{ data.exhibit_no }} 的可印搭配
+    {% if data.storage_mode == 'dense' %}
+      <span class="tag dense">清单存法（任意图版 × 任意语种）</span>
+    {% else %}
+      <span class="tag sparse">配对存法（仅实际配对）</span>
+    {% endif %}
+  </h1>
+  <p class="muted">
+    已登记可印搭配 {{ data.pair_count }} 种；图版 {{ data.plates|length }} 个，
+    语种 {{ data.languages|length }} 种；最近更新 {{ data.updated_at }} (UTC)。
+    {% if data.storage_mode == 'sparse' and not data.is_complete %}
+      核对结果：图版与语种<b>未</b>构成完整笛卡尔积，缺项 {{ data.missing_pairs|length }} 个，按配对存法登记。
+    {% elif data.storage_mode == 'dense' %}
+      核对结果：图版与语种构成完整笛卡尔积，仅存单去重的图版、语种两份清单。
+    {% endif %}
+  </p>
+  <table>
+    <thead>
+      <tr><th>图版号</th><th>可印语种</th></tr>
+    </thead>
+    <tbody>
+      {% for plate in data.plates %}
+      <tr>
+        <td><b>{{ plate }}</b></td>
+        <td>{{ data.by_plate[plate] | join('、') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>补录一批 CSV（并发补录同样会并入该展品）</h2>
+  <form class="inline" action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="exhibit_no" value="{{ data.exhibit_no }}">
+    <label>CSV 文件
+      <input type="file" name="csv_file" accept=".csv,text/csv" required>
+    </label>
+    <button type="submit">去重追加登记</button>
+    <a class="pill" href="{{ url_for('index') }}">返回展品列表</a>
+  </form>
+</div>
+
+{% if data.missing_pairs %}
+<div class="card">
+  <h2>缺项明细（仅依据已登记数据核对）</h2>
+  <table>
+    <thead><tr><th>图版号</th><th>缺失语种</th></tr></thead>
+    <tbody>
+      {% for plate, lang in data.missing_pairs %}
+      <tr><td>{{ plate }}</td><td>{{ lang }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>批次记录</h2>
+  <table>
+    <thead>
+      <tr><th>#</th><th>时间 (UTC)</th><th>文件原始行数</th><th>去重后</th><th>新增</th><th>累计搭配</th><th>存法</th><th>状态</th><th>备注</th></tr>
+    </thead>
+    <tbody>
+      {% for b in data.batches %}
+      <tr>
+        <td>{{ b.id }}</td>
+        <td class="muted">{{ b.received_at }}</td>
+        <td>{{ b.rows_in_file }}</td>
+        <td>{{ b.unique_rows }}</td>
+        <td>{{ b.new_pairs }}</td>
+        <td>{{ b.total_pairs }}</td>
+        <td>
+          {% if b.storage_mode == 'dense' %}<span class="tag dense">清单</span>
+          {% else %}<span class="tag sparse">配对</span>{% endif %}
+          {% if b.switched_from %}<div class="muted">由{{ '清单' if b.switched_from == 'dense' else '配对' }}切换</div>{% endif %}
+        </td>
+        <td>{{ '已提交' if b.status == 'committed' else '已拒收' }}</td>
+        <td class="muted">{{ b.message or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

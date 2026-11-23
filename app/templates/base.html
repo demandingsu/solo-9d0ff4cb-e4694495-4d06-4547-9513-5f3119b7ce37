@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}展签图版语种登记{% endblock %}</title>
+  <style>
+    :root { --line:#d7dbe2; --ink:#1f2937; --muted:#6b7280; --brand:#1d4ed8; --ok:#065f46; --okbg:#d1fae5; --err:#991b1b; --errbg:#fee2e2; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; color:var(--ink); background:#f6f7f9; }
+    header { background:var(--brand); color:#fff; padding:16px 28px; }
+    header a { color:#fff; text-decoration:none; font-weight:600; font-size:18px; }
+    main { max-width:1080px; margin:24px auto; padding:0 20px; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:20px 24px; margin-bottom:20px; }
+    h1 { font-size:22px; margin:0 0 14px; }
+    h2 { font-size:17px; margin:0 0 12px; }
+    table { border-collapse:collapse; width:100%; font-size:14px; }
+    th, td { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+    th { background:#f1f4f9; }
+    form.inline { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    input[type=text] { padding:9px 12px; border:1px solid var(--line); border-radius:8px; min-width:220px; font-size:14px; }
+    input[type=file] { font-size:14px; }
+    button { padding:9px 18px; border:0; border-radius:8px; background:var(--brand); color:#fff; font-size:14px; cursor:pointer; }
+    button:hover { background:#1e40af; }
+    .flash { padding:11px 16px; border-radius:8px; margin-bottom:14px; font-size:14px; }
+    .flash.success { background:var(--okbg); color:var(--ok); }
+    .flash.error { background:var(--errbg); color:var(--err); }
+    .tag { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+    .tag.dense { background:#dbeafe; color:#1e40af; }
+    .tag.sparse { background:#fef3c7; color:#92400e; }
+    .muted { color:var(--muted); font-size:13px; }
+    code { background:#f1f4f9; padding:1px 6px; border-radius:5px; }
+    a.pill { display:inline-block; padding:4px 12px; border:1px solid var(--line); border-radius:999px; text-decoration:none; color:var(--brand); font-size:13px; }
+    ul.tight { margin:6px 0; padding-left:20px; }
+    ul.tight li { margin:2px 0; }
+  </style>
+</head>
+<body>
+  <header><a href="{{ url_for('index') }}">展签送印 · 图版语种搭配登记</a></header>
+  <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

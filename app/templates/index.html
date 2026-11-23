@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>按展品号登记一批图版-语种 CSV</h1>
+  <form class="inline" action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
+    <label>展品号
+      <input type="text" name="exhibit_no" required placeholder="例如 A-001">
+    </label>
+    <label>CSV 文件
+      <input type="file" name="csv_file" accept=".csv,text/csv" required>
+    </label>
+    <button type="submit">去重追加登记</button>
+  </form>
+  <p class="muted" style="margin-top:12px">
+    CSV 每行一种可印搭配：<code>图版号,语种</code>，可带表头
+    （列名含 plate/图版、language/语种）。同一批次内重复行自动去重；
+    数据与库内已登记资料合并后，自动选择「清单存法」或「配对存法」。
+  </p>
+</div>
+
+<div class="card">
+  <h1>已登记展品</h1>
+  {% if exhibits %}
+  <table>
+    <thead>
+      <tr><th>展品号</th><th>当前存法</th><th>图版数</th><th>语种数</th><th>最近更新 (UTC)</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for e in exhibits %}
+      <tr>
+        <td>{{ e.exhibit_no }}</td>
+        <td>
+          {% if e.storage_mode == 'dense' %}
+            <span class="tag dense">清单存法</span>
+          {% else %}
+            <span class="tag sparse">配对存法</span>
+          {% endif %}
+        </td>
+        <td>{{ e.plate_count_dense if e.storage_mode == 'dense' else e.plate_count_sparse }}</td>
+        <td>{{ e.language_count_dense if e.storage_mode == 'dense' else e.language_count_sparse }}</td>
+        <td class="muted">{{ e.updated_at }}</td>
+        <td><a class="pill" href="{{ url_for('exhibit_detail', exhibit_no=e.exhibit_no) }}">查看可印语种</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">尚无登记资料，请在上方提交第一批 CSV。</p>
+  {% endif %}
+</div>
+{% endblock %}
