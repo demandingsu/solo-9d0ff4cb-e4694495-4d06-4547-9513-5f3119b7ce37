@@ -1,4 +1,4 @@
-"""Flask 网页：登记展品图版-语种搭配并查询可印语种。"""
+"""Flask 网页：主展图版-语种搭配登记、巡展分站差异登记与可印语种查询。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from flask import (
     url_for,
 )
 
-from . import csvio, storage
+from . import csvio, stations, storage
 from .db import connect, init_db
 
 _SCHEMA_READY: set[str] = set()
@@ -90,6 +90,71 @@ def create_app(db_path: str | None = None) -> Flask:
         )
         return redirect(url_for("exhibit_detail", exhibit_no=exhibit_no))
 
+    # ---------- 巡展分站（网页） ----------
+
+    @app.get("/stations")
+    def station_index():
+        data = stations.list_stations(g.db)
+        exhibits = storage.list_exhibits(g.db)
+        return render_template("stations.html", stations=data, exhibits=exhibits)
+
+    @app.post("/stations")
+    def station_create():
+        station_no = (request.form.get("station_no") or "").strip()
+        parent_exhibit_no = (request.form.get("parent_exhibit_no") or "").strip()
+        if not station_no or not parent_exhibit_no:
+            flash("请同时填写分站号并选择已登记的主展", "error")
+            return redirect(url_for("station_index"))
+        try:
+            stations.register_station(g.db, station_no, parent_exhibit_no)
+        except LookupError as exc:
+            flash(f"分站未创建：{exc}", "error")
+            return redirect(url_for("station_index"))
+        except sqlite3.OperationalError as exc:
+            flash(f"数据库繁忙，分站未写入，请稍后重试：{exc}", "error")
+            return redirect(url_for("station_index"))
+        flash(f"分站 {station_no} 已登记，沿用主展 {parent_exhibit_no} 的展签。", "success")
+        return redirect(url_for("station_detail", station_no=station_no))
+
+    @app.get("/stations/<path:station_no>")
+    def station_detail(station_no: str):
+        data = stations.get_station(g.db, station_no)
+        if data is None:
+            abort(404)
+        return render_template("station_detail.html", data=data)
+
+    @app.post("/stations/<path:station_no>/diffs")
+    def station_upload_diff(station_no: str):
+        target = stations.get_station(g.db, station_no)
+        if target is None:
+            abort(404)
+        upload = request.files.get("csv_file")
+        if upload is None or not upload.filename:
+            flash("请选择分站差异 CSV 文件", "error")
+            return redirect(url_for("station_detail", station_no=station_no))
+        try:
+            parsed = csvio.parse_diffs(upload.read())
+        except csvio.CsvFormatError as exc:
+            stations.log_rejected_diff(g.db, station_no, str(exc))
+            flash(f"差异 CSV 校验失败，整单拒收，原差异继续生效：{exc}", "error")
+            return redirect(url_for("station_detail", station_no=station_no))
+        try:
+            result = stations.replace_diffs(g.db, station_no, parsed)
+        except sqlite3.OperationalError as exc:
+            app.logger.exception("write failed")
+            flash(f"数据库繁忙，差异未写入，请稍后重试：{exc}", "error")
+            return redirect(url_for("station_detail", station_no=station_no))
+        if result.unique_rows == 0:
+            flash("已上传空清单：分站差异全部清空，恢复直接沿用主展。", "success")
+        else:
+            flash(
+                f"差异已整份替换：文件原始 {result.rows_in_file} 行 / 去重后 "
+                f"{result.unique_rows} 条（增补 {result.add_count} 条、排除 "
+                f"{result.exclude_count} 条）。",
+                "success",
+            )
+        return redirect(url_for("station_detail", station_no=station_no))
+
     # ---------- JSON API（便于自测与系统对接） ----------
 
     @app.get("/api/exhibits")
@@ -127,6 +192,65 @@ def create_app(db_path: str | None = None) -> Flask:
                 "unique_rows": result.unique_rows,
                 "new_pairs": result.new_pairs,
                 "total_pairs": result.total_pairs,
+            }
+        )
+
+    # ---------- 巡展分站（JSON API） ----------
+
+    @app.get("/api/stations")
+    def api_station_list():
+        return jsonify(stations.list_stations(g.db))
+
+    @app.post("/api/stations")
+    def api_station_create():
+        payload = request.get_json(silent=True) or request.form
+        station_no = (payload.get("station_no") or "").strip()
+        parent_exhibit_no = (payload.get("parent_exhibit_no") or "").strip()
+        if not station_no or not parent_exhibit_no:
+            return jsonify({"error": "需要 station_no 与 parent_exhibit_no"}), 400
+        try:
+            stations.register_station(g.db, station_no, parent_exhibit_no)
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except sqlite3.OperationalError as exc:
+            return jsonify({"error": f"database busy: {exc}"}), 503
+        return jsonify(
+            {"status": "registered", "station_no": station_no,
+             "parent_exhibit_no": parent_exhibit_no}
+        ), 201
+
+    @app.get("/api/stations/<path:station_no>")
+    def api_station_detail(station_no: str):
+        data = stations.get_station(g.db, station_no)
+        if data is None:
+            return jsonify({"error": "station not found"}), 404
+        return jsonify(data)
+
+    @app.put("/api/stations/<path:station_no>/diffs")
+    def api_station_replace_diffs(station_no: str):
+        if stations.get_station(g.db, station_no) is None:
+            return jsonify({"error": "station not found"}), 404
+        upload = request.files.get("csv_file")
+        if upload is None or not upload.filename:
+            return jsonify({"error": "缺少 csv_file 文件字段"}), 400
+        try:
+            parsed = csvio.parse_diffs(upload.read())
+        except csvio.CsvFormatError as exc:
+            stations.log_rejected_diff(g.db, station_no, str(exc))
+            return jsonify({"error": str(exc), "status": "rejected"}), 422
+        try:
+            result = stations.replace_diffs(g.db, station_no, parsed)
+        except sqlite3.OperationalError as exc:
+            return jsonify({"error": f"database busy: {exc}"}), 503
+        return jsonify(
+            {
+                "status": "committed",
+                "station_no": result.station_no,
+                "parent_exhibit_no": result.parent_exhibit_no,
+                "rows_in_file": result.rows_in_file,
+                "unique_rows": result.unique_rows,
+                "add_count": result.add_count,
+                "exclude_count": result.exclude_count,
             }
         )
 

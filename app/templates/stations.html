@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}巡展分站 · 差异登记{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>登记巡展分站并选用主展</h1>
+  {% if exhibits %}
+  <form class="inline" action="{{ url_for('station_create') }}" method="post">
+    <label>分站号
+      <input type="text" name="station_no" required placeholder="例如 TOUR-SH-01">
+    </label>
+    <label>沿用的主展（已登记展品）
+      <select name="parent_exhibit_no" required>
+        <option value="" disabled selected>请选择主展展品号</option>
+        {% for e in exhibits %}
+        <option value="{{ e.exhibit_no }}">{{ e.exhibit_no }}（{{ '清单存法' if e.storage_mode == 'dense' else '配对存法' }}）</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">登记分站</button>
+  </form>
+  <p class="muted" style="margin-top:12px">
+    分站只保存本站差异，可印搭配始终按「主展已登记数据 + 本站差异」即时合成；
+    主展补录或切换存法后分站自动跟上。
+  </p>
+  {% else %}
+  <p class="muted">尚无已登记主展，请先到 <a href="{{ url_for('index') }}">主展登记页</a> 上传展品 CSV。</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h1>已登记分站</h1>
+  {% if stations %}
+  <table>
+    <thead>
+      <tr><th>分站号</th><th>沿用主展</th><th>增补条数</th><th>排除条数</th><th>最近更新 (UTC)</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for s in stations %}
+      <tr>
+        <td>{{ s.station_no }}</td>
+        <td>{{ s.parent_exhibit_no }}</td>
+        <td>{{ s.add_count }}</td>
+        <td>{{ s.exclude_count }}</td>
+        <td class="muted">{{ s.updated_at }}</td>
+        <td><a class="pill" href="{{ url_for('station_detail', station_no=s.station_no) }}">查看本站可印语种</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">尚无分站。</p>
+  {% endif %}
+  <p style="margin-top:14px"><a class="pill" href="{{ url_for('index') }}">返回主展登记页</a></p>
+</div>
+{% endblock %}

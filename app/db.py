@@ -60,10 +60,45 @@ CREATE TABLE IF NOT EXISTS batch_log (
     message      TEXT
 );
 
+-- 巡展分站：分站只存自己的差异（增补 add / 排除 exclude），
+-- 可印搭配始终由「主展已登记数据 + 本站差异」在查询时即时合成。
+-- parent_exhibit_no 刻意不加外键级联：主展补录/切换存法由存储层透明兼容，
+-- 主展暂缺时分站差异仍保留，主展恢复登记后自动重新跟上。
+CREATE TABLE IF NOT EXISTS stations (
+    station_no        TEXT PRIMARY KEY,
+    parent_exhibit_no TEXT NOT NULL,
+    created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS station_diffs (
+    station_no TEXT NOT NULL,
+    plate_no   TEXT NOT NULL,
+    language   TEXT NOT NULL,
+    action     TEXT NOT NULL CHECK (action IN ('add', 'exclude')),
+    PRIMARY KEY (station_no, plate_no, language),
+    FOREIGN KEY (station_no) REFERENCES stations(station_no) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS station_diff_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    station_no   TEXT NOT NULL,
+    received_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    rows_in_file INTEGER NOT NULL,
+    unique_rows  INTEGER NOT NULL,
+    add_count    INTEGER NOT NULL,
+    exclude_count INTEGER NOT NULL,
+    status       TEXT NOT NULL CHECK (status IN ('committed', 'rejected')),
+    message      TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_sparse_exhibit   ON sparse_pairs(exhibit_no);
 CREATE INDEX IF NOT EXISTS idx_dense_plate_ex   ON dense_plates(exhibit_no);
 CREATE INDEX IF NOT EXISTS idx_dense_lang_ex    ON dense_languages(exhibit_no);
 CREATE INDEX IF NOT EXISTS idx_batch_exhibit    ON batch_log(exhibit_no);
+CREATE INDEX IF NOT EXISTS idx_station_parent   ON stations(parent_exhibit_no);
+CREATE INDEX IF NOT EXISTS idx_station_diffs_no ON station_diffs(station_no);
+CREATE INDEX IF NOT EXISTS idx_station_log_no   ON station_diff_log(station_no);
 """
 
 

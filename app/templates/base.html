@@ -28,6 +28,9 @@
     .tag { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600; }
     .tag.dense { background:#dbeafe; color:#1e40af; }
     .tag.sparse { background:#fef3c7; color:#92400e; }
+    .tag.add { background:#d1fae5; color:#065f46; margin:2px 4px 2px 0; }
+    .tag.parent { background:#e5e7eb; color:#374151; margin:2px 4px 2px 0; }
+    select { padding:9px 12px; border:1px solid var(--line); border-radius:8px; min-width:260px; font-size:14px; background:#fff; }
     .muted { color:var(--muted); font-size:13px; }
     code { background:#f1f4f9; padding:1px 6px; border-radius:5px; }
     a.pill { display:inline-block; padding:4px 12px; border:1px solid var(--line); border-radius:999px; text-decoration:none; color:var(--brand); font-size:13px; }
@@ -36,7 +39,10 @@
   </style>
 </head>
 <body>
-  <header><a href="{{ url_for('index') }}">展签送印 · 图版语种搭配登记</a></header>
+  <header>
+    <a href="{{ url_for('index') }}">展签送印 · 主展图版语种登记</a>
+    <a href="{{ url_for('station_index') }}" style="margin-left:20px;font-size:15px">巡展分站差异</a>
+  </header>
   <main>
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}

@@ -126,6 +126,45 @@ class HttpEndToEndTest(unittest.TestCase):
         with urllib.request.urlopen(f"{self.base}/api/exhibits/{exhibit}", timeout=10) as resp:
             return json.loads(resp.read())
 
+    # ---------- 巡展分站 ----------
+
+    def _multipart_raw(self, fields: dict[str, str], filename: str, content: bytes):
+        body, boundary = _multipart(fields, filename, content)
+        return body, boundary
+
+    def _station_create(self, station: str, parent: str) -> tuple[int, dict]:
+        body, boundary = _multipart(
+            {"station_no": station, "parent_exhibit_no": parent}, "station.csv", b""
+        )
+        req = urllib.request.Request(
+            f"{self.base}/api/stations", data=body, method="POST",
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.status, json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            return exc.status, json.loads(exc.read())
+
+    def _station_diff(
+        self, station: str, lines: list[str], raw: bytes | None = None
+    ) -> tuple[int, dict]:
+        content = raw if raw is not None else ("\n".join(lines) + "\n").encode("utf-8")
+        body, boundary = self._multipart_raw({}, "diffs.csv", content)
+        req = urllib.request.Request(
+            f"{self.base}/api/stations/{station}/diffs", data=body, method="PUT",
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.status, json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            return exc.status, json.loads(exc.read())
+
+    def _station_get(self, station: str) -> dict:
+        with urllib.request.urlopen(f"{self.base}/api/stations/{station}", timeout=10) as resp:
+            return json.loads(resp.read())
+
     def test_01_dedup_and_sparse_to_dense_switch_over_http(self):
         exhibit = "HTTP-E1"
         r1 = self._upload(exhibit, [("P1", "zh"), ("P2", "zh"), ("P2", "en"), ("P2", "en")])
@@ -212,12 +251,91 @@ class HttpEndToEndTest(unittest.TestCase):
         self.assertEqual(da["storage_mode"], "dense")
         self.assertEqual(db["storage_mode"], "dense")
 
-    def test_06_pages_render(self):
-        for path in ("/", "/exhibits/HTTP-E1", "/healthz"):
+    def test_06_station_early_exclude_then_parent_backfill_over_http(self):
+        """题目要求的网页试跑主链路：提前排除 -> 主展补录 -> 排除仍生效。"""
+        parent = "HTTP-TOUR-MAIN"
+        station = "HTTP-TOUR-S1"
+        # 主展初始只有 (P1, zh)，sparse
+        self._upload(parent, [("P1", "zh")])
+        status, _ = self._station_create(station, parent)
+        self.assertEqual(status, 201)
+        # 选用未登记主展应被拒
+        status, payload = self._station_create("HTTP-TOUR-BAD", "GHOST-MAIN")
+        self.assertEqual(status, 404)
+
+        # 提前排除主展尚不存在的 (P1, en)，并增补当地语种 (P1, ja)
+        status, r = self._station_diff(
+            station,
+            ["plate_no,language,action", "P1,en,exclude", "P1,ja,add"],
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual((r["add_count"], r["exclude_count"]), (1, 1))
+        d1 = self._station_get(station)
+        self.assertEqual(
+            {x["language"]: x["source"] for x in d1["by_plate"]["P1"]},
+            {"zh": "parent", "ja": "station_add"},
+        )
+        self.assertEqual(d1["pair_count"], 2)
+
+        # 同文件相反操作整单拒收（422），旧差异继续生效
+        status, payload = self._station_diff(
+            station, ["P9,fr,add", "P9,fr,exclude"]
+        )
+        self.assertEqual(status, 422)
+        self.assertIn("整单拒收", payload["error"])
+        d2 = self._station_get(station)
+        self.assertEqual(d2["excludes"], [["P1", "en"]])  # 原差异未动
+
+        # 主展补录 (P1,en) 及 P2 全套，主展升 dense
+        self._upload(parent, [("P1", "en"), ("P2", "zh"), ("P2", "en")])
+        d3 = self._station_get(station)
+        self.assertEqual(d3["parent_storage_mode"], "dense")
+        langs_p1 = {x["language"]: x["source"] for x in d3["by_plate"]["P1"]}
+        self.assertNotIn("en", langs_p1)          # 提前排除仍生效
+        self.assertEqual(langs_p1["ja"], "station_add")
+        # 主展 4 搭配 − 排除 1 + 主展外增补 1 = 4
+        self.assertEqual(d3["pair_count"], 4)
+
+        # 空清单整份替换：清空差异，恢复直接沿用主展
+        status, r = self._station_diff(station, [], raw=b"plate_no,language,action\n")
+        self.assertEqual(status, 200)
+        self.assertEqual(r["unique_rows"], 0)
+        d4 = self._station_get(station)
+        self.assertEqual(d4["adds"], [])
+        self.assertEqual(d4["excludes"], [])
+        self.assertEqual(d4["pair_count"], 4)
+
+    def test_07_station_replace_and_dense_count_over_http(self):
+        parent = "HTTP-TOUR-DENSE"
+        station = "HTTP-TOUR-S2"
+        self._upload(parent, [("P1", "zh"), ("P1", "en"), ("P2", "zh"), ("P2", "en")])
+        self._station_create(station, parent)
+        # 第一份差异
+        self._station_diff(station, ["P1,fr,add", "P2,en,exclude"])
+        d1 = self._station_get(station)
+        self.assertEqual(d1["pair_count"], 4)  # 4 − 1 + 1
+        # 第二份整份替换
+        self._station_diff(station, ["P2,zh,exclude"])
+        d2 = self._station_get(station)
+        self.assertEqual(d2["adds"], [])
+        self.assertEqual(d2["excludes"], [["P2", "zh"]])
+        self.assertEqual(d2["pair_count"], 3)
+        # 各站只存自己的差异
+        other = self._station_get("HTTP-TOUR-S1")
+        self.assertEqual(other["excludes"], [])
+
+    def test_08_pages_render(self):
+        for path in (
+            "/",
+            "/exhibits/HTTP-E1",
+            "/stations",
+            "/stations/HTTP-TOUR-S1",
+            "/healthz",
+        ):
             with urllib.request.urlopen(self.base + path, timeout=10) as resp:
                 self.assertEqual(resp.status, 200)
         try:
-            urllib.request.urlopen(self.base + "/exhibits/NO-SUCH", timeout=10)
+            urllib.request.urlopen(self.base + "/stations/NO-SUCH", timeout=10)
             self.fail("应 404")
         except urllib.error.HTTPError as exc:
             self.assertEqual(exc.status, 404)

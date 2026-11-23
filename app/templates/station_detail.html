@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}分站 {{ data.station_no }} · 可印语种{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>分站 {{ data.station_no }} 的可印搭配
+    <span class="tag dense">沿用主展 {{ data.parent_exhibit_no }}</span>
+    {% if data.parent_storage_mode == 'dense' %}
+      <span class="tag dense">主展清单存法</span>
+    {% elif data.parent_storage_mode == 'sparse' %}
+      <span class="tag sparse">主展配对存法</span>
+    {% else %}
+      <span class="tag sparse">主展尚未登记</span>
+    {% endif %}
+  </h1>
+  <p class="muted">
+    本站当前可印搭配 <b>{{ data.pair_count }}</b> 种，覆盖图版 {{ data.plates|length }} 个；
+    口径为同一时点的主展已登记数据与本站差异。
+    主展补录或切换存法后本页自动跟上，无需重做差异。
+  </p>
+  {% if not data.parent_registered %}
+  <p class="flash error" style="margin:8px 0">主展 {{ data.parent_exhibit_no }} 当前查无登记资料，
+    暂仅展示本站增补；主展恢复登记后将自动重新合成。</p>
+  {% endif %}
+  <table>
+    <thead>
+      <tr><th>图版号</th><th>可印语种（标注来源）</th></tr>
+    </thead>
+    <tbody>
+      {% for plate in data.plates %}
+      <tr>
+        <td><b>{{ plate }}</b></td>
+        <td>
+          {% for item in data.by_plate[plate] %}
+            {% if item.source == 'station_add' %}
+              <span class="tag add">分站增补 · {{ item.language }}</span>
+            {% else %}
+              <span class="tag parent">主展 · {{ item.language }}</span>
+            {% endif %}
+          {% endfor %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2" class="muted">当前没有任何可印搭配。</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted" style="margin-top:10px">
+    同一搭配主展与分站增补都有时按「分站增补」计，且只计一次；
+    被排除的搭配即使后来补录进主展，本站仍不印。
+  </p>
+</div>
+
+<div class="card">
+  <h2>整份替换分站差异 CSV</h2>
+  <form class="inline" action="{{ url_for('station_upload_diff', station_no=data.station_no) }}" method="post" enctype="multipart/form-data">
+    <label>差异 CSV
+      <input type="file" name="csv_file" accept=".csv,text/csv" required>
+    </label>
+    <button type="submit">整份替换差异</button>
+    <a class="pill" href="{{ url_for('station_index') }}">返回分站列表</a>
+  </form>
+  <p class="muted" style="margin-top:12px">
+    每行三列 <code>图版号,语种,操作</code>，可带表头（列名含 plate/图版、language/语种、action/操作）；
+    操作取 <code>add</code>（增补/加印）或 <code>exclude</code>（排除/取消）。
+    新文件整份替换旧差异；<b>空文件或只有表头即空清单，清空差异、恢复直接沿用主展</b>。
+    同一搭配在文件内同时写增补与排除时整单拒收，原差异继续生效。
+  </p>
+</div>
+
+<div class="card">
+  <h2>当前本站差异（各站只存自己的差异）</h2>
+  <table>
+    <thead><tr><th>图版号</th><th>语种</th><th>操作</th></tr></thead>
+    <tbody>
+      {% for plate, lang in data.excludes %}
+      <tr><td>{{ plate }}</td><td>{{ lang }}</td><td><span class="tag sparse">排除 exclude</span></td></tr>
+      {% endfor %}
+      {% for plate, lang in data.adds %}
+      <tr><td>{{ plate }}</td><td>{{ lang }}</td><td><span class="tag add">增补 add</span></td></tr>
+      {% endfor %}
+      {% if not data.adds and not data.excludes %}
+      <tr><td colspan="3" class="muted">暂无差异，直接沿用主展。</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>差异文件记录</h2>
+  <table>
+    <thead>
+      <tr><th>#</th><th>时间 (UTC)</th><th>原始行数</th><th>去重后</th><th>增补</th><th>排除</th><th>状态</th><th>备注</th></tr>
+    </thead>
+    <tbody>
+      {% for b in data.diff_logs %}
+      <tr>
+        <td>{{ b.id }}</td>
+        <td class="muted">{{ b.received_at }}</td>
+        <td>{{ b.rows_in_file }}</td>
+        <td>{{ b.unique_rows }}</td>
+        <td>{{ b.add_count }}</td>
+        <td>{{ b.exclude_count }}</td>
+        <td>{{ '已生效' if b.status == 'committed' else '已拒收' }}</td>
+        <td class="muted">{{ b.message or '' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="muted">尚未上传过差异文件。</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
